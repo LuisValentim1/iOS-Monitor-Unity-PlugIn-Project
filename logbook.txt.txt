@@ -1,0 +1,17 @@
+07/03  21:00-21:20
+	Read and research the project 
+	Swift downloads
+	Read surface level documentation on swift and iOS plugin development 
+
+08/03 15:00-15:30 
+	Discussed possible solutions with AI
+	Reached possible solution
+
+11/03 17:00-17:40 
+	Reviewed solution, realized I can't use xCode on Windows which might be a big problem 
+	Created this repository 
+
+      18:00-18:30 
+	Planned how to get around the xCode problem, I do believe I can develop it using Flutter and then integrate into Unity, functionally I believe its the same. I don't know if this breaks the iOS native requirement but I don't have an iOS machine or access to one easily so for now I will try this.
+	Downloaded Unity's latest LTS version
+	Updated documentation
