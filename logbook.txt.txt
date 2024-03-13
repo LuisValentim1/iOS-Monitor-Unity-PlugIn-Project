@@ -25,3 +25,13 @@
 	Implemented UI controller logic.
 	Tested project with simulated data. 
 	Unity part finished.
+
+13/03 16:50-17:35
+	Further investigated the Flutter route, it seems it is not possible for this project in particular and xCode is absolutely crucial which is problematic as I currently do not have access to a macOS system and thus no access to xCode.
+	Discussed an action plan and swift code for plugin development with AI assistant, reached a possible starting point solution. 
+	Looked into possible solutions for xCode issue, will try to contact someone with a macOS system to finish the project.
+      20:10-21:00
+	Documented xCode plan and swift code within the repository. 
+	Fixed gitignore issue.
+	Updated documentation.
+	
