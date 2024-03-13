@@ -1,0 +1,5 @@
+1. Open Xcode and create a new project. Choose "App" as the template and select "iOS" as the platform.
+2. Within the Xcode project, add a new Swift file, the code for this file can be found in this repository as SystemMonitor.swift .
+3. Build the Xcode project to ensure that there are no errors and that the Swift code compiles successfully. This can be do through Product > Build.
+4. Locate the built Swift framework (.framework file) from the Xcode project. Create a Assets/Plugins/iOS folder in the Unity project and copy the framework to said folder.
+5. In the Unity C# scripts, use platform invocation (P/Invoke) to call the functions exposed by the Swift plugin. There is an example of how to this in this repository called SystemMonitorExample.cs .
