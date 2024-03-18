@@ -1,6 +1,7 @@
 import Foundation
 import Metal
 import QuartzCore
+import MachO
 
 public class SystemMonitor {
     
@@ -15,68 +16,56 @@ public class SystemMonitor {
         self.commandQueue = device.makeCommandQueue()
     }
     
+    typealias host_cpu_load_info_t = host_cpu_load_info_data_t
+
+    let HOST_CPU_LOAD_INFO_COUNT = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size)
+
+    func host_cpu_load_info() -> host_cpu_load_info_t {
+        var count = HOST_CPU_LOAD_INFO_COUNT
+        var cpuLoadInfo = host_cpu_load_info_t()
+        let result = withUnsafeMutablePointer(to: &cpuLoadInfo) { infoPointer in
+            infoPointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { pointer in
+                host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, pointer, &count)
+            }
+        }
+        if result != KERN_SUCCESS {
+            fatalError("Error retrieving CPU load info: \(result)")
+        }
+        return cpuLoadInfo
+    }
+    
     // Measure CPU usage
     public static func cpuUsage() -> Float {
-        var kr: kern_return_t
-        var task_info_count: mach_msg_type_number_t
-        var task_info: task_info_data_t
-        var thread_list: thread_act_array_t?
-        var thread_count: mach_msg_type_number_t
+        var cpuUsageInfo = host_cpu_load_info()
+        var count = mach_msg_type_number_t(HOST_CPU_LOAD_INFO_COUNT)
+        var usage: Float = 0.0
         
-        task_info_count = mach_msg_type_number_t(TASK_INFO_MAX)
-        kr = task_info(mach_task_self_, task_flavor_t(TASK_BASIC_INFO), &task_info, &task_info_count)
-        if kr != KERN_SUCCESS {
-            return -1
-        }
-        
-        var thread_info: thread_info_data_t = thread_info_data_t.allocate(capacity: Int(THREAD_INFO_MAX))
-        
-        defer {
-            thread_info.deallocate()
-        }
-        
-        var thread_info_count: mach_msg_type_number_t = mach_msg_type_number_t(THREAD_INFO_MAX)
-        thread_list = UnsafeMutablePointer.allocate(capacity: Int(task_info.max_threads))
-        defer {
-            thread_list!.deallocate()
-        }
-        
-        kr = task_threads(mach_task_self_, &thread_list!, &thread_count)
-        if kr != KERN_SUCCESS {
-            return -1
-        }
-        
-        var totalUsageOfCPU: Float = 0.0
-        
-        for i in 0..<Int(thread_count) {
-            var threadBasicInfo = thread_basic_info_t.allocate(capacity: 1)
-            defer {
-                threadBasicInfo.deallocate()
+        let result = withUnsafeMutablePointer(to: &cpuUsageInfo) { infoPointer in
+            infoPointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { pointer in
+                host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, pointer, &count)
             }
+        }
+        
+        if result == KERN_SUCCESS {
+            let user = Float(cpuUsageInfo.cpu_ticks.0)
+            let system = Float(cpuUsageInfo.cpu_ticks.1)
+            let idle = Float(cpuUsageInfo.cpu_ticks.2)
+            let total = user + system + idle
             
-            var threadInfoCount = mach_msg_type_number_t(THREAD_BASIC_INFO_COUNT)
-            kr = thread_info(thread_list![i], thread_flavor_t(THREAD_BASIC_INFO), threadBasicInfo, &threadInfoCount)
-            if kr != KERN_SUCCESS {
-                return -1
-            }
-            
-            let threadInfo = threadBasicInfo.pointee
-            if threadInfo.flags & TH_FLAGS_IDLE == 0 {
-                totalUsageOfCPU += Float(threadInfo.cpu_usage) / Float(TH_USAGE_SCALE) * 100.0
+            if total != 0 {
+                usage = (user + system) / total * 100.0
             }
         }
         
-        return totalUsageOfCPU
+        return usage
     }
     
     // Measure GPU usage
     public func gpuUsage() -> Float {
-        guard let commandBuffer = commandQueue.makeCommandBuffer() else {
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
+              let startTime = CACurrentMediaTime() else {
             return -1.0
         }
-        
-        // Start timing
-        let startTime = CACurrentMediaTime()
         
         // Execute commands
         // Example: render a simple triangle
@@ -91,7 +80,9 @@ public class SystemMonitor {
         commandBuffer.waitUntilCompleted()
         
         // End timing
-        let endTime = CACurrentMediaTime()
+        guard let endTime = CACurrentMediaTime() else {
+            return -1.0
+        }
         
         // Calculate GPU usage as a percentage
         let elapsedTime = endTime - startTime
