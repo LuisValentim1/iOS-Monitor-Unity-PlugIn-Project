@@ -1,7 +1,9 @@
 import Foundation
 import Metal
+import QuartzCore
 
 public class SystemMonitor {
+    
     private var device: MTLDevice!
     private var commandQueue: MTLCommandQueue!
     
@@ -17,18 +19,9 @@ public class SystemMonitor {
     public static func cpuUsage() -> Float {
         var kr: kern_return_t
         var task_info_count: mach_msg_type_number_t
-        var thread_info_count: mach_msg_type_number_t
-        var threads: thread_act_array_t!
-        var thread_info: thread_info_data_t
-        var thread_basic_info: thread_basic_info_t
-        var thread_stat: thread_extended_info_t
         var task_info: task_info_data_t
-        var task_basic_info: task_basic_info_32_t
-        var task_extended_info: task_extinfo_data_t
-        var task_threads: task_thread_times_info_t?
-        var task_thread_count: mach_msg_type_number_t
-        var task_thread_info: mach_msg_type_number_t
-        var task_cpu_usage: Float = 0
+        var thread_list: thread_act_array_t?
+        var thread_count: mach_msg_type_number_t
         
         task_info_count = mach_msg_type_number_t(TASK_INFO_MAX)
         kr = task_info(mach_task_self_, task_flavor_t(TASK_BASIC_INFO), &task_info, &task_info_count)
@@ -36,43 +29,56 @@ public class SystemMonitor {
             return -1
         }
         
-        task_info_count = mach_msg_type_number_t(TASK_THREAD_TIMES_INFO)
-        kr = task_info(mach_task_self_, task_flavor_t(TASK_THREAD_TIMES_INFO), &task_threads, &task_thread_count)
+        var thread_info: thread_info_data_t = thread_info_data_t.allocate(capacity: Int(THREAD_INFO_MAX))
+        
+        defer {
+            thread_info.deallocate()
+        }
+        
+        var thread_info_count: mach_msg_type_number_t = mach_msg_type_number_t(THREAD_INFO_MAX)
+        thread_list = UnsafeMutablePointer.allocate(capacity: Int(task_info.max_threads))
+        defer {
+            thread_list!.deallocate()
+        }
+        
+        kr = task_threads(mach_task_self_, &thread_list!, &thread_count)
         if kr != KERN_SUCCESS {
             return -1
         }
         
-        task_thread_info = mach_msg_type_number_t(THREAD_INFO_MAX)
-        kr = task_threads_info(mach_task_self_, &threads, &task_thread_count, &task_thread_info)
-        if kr != KERN_SUCCESS {
-            return -1
+        var totalUsageOfCPU: Float = 0.0
+        
+        for i in 0..<Int(thread_count) {
+            var threadBasicInfo = thread_basic_info_t.allocate(capacity: 1)
+            defer {
+                threadBasicInfo.deallocate()
+            }
+            
+            var threadInfoCount = mach_msg_type_number_t(THREAD_BASIC_INFO_COUNT)
+            kr = thread_info(thread_list![i], thread_flavor_t(THREAD_BASIC_INFO), threadBasicInfo, &threadInfoCount)
+            if kr != KERN_SUCCESS {
+                return -1
+            }
+            
+            let threadInfo = threadBasicInfo.pointee
+            if threadInfo.flags & TH_FLAGS_IDLE == 0 {
+                totalUsageOfCPU += Float(threadInfo.cpu_usage) / Float(TH_USAGE_SCALE) * 100.0
+            }
         }
         
-        task_info_count = mach_msg_type_number_t(TASK_THREAD_INFO)
-        kr = task_info(threads[0], task_flavor_t(THREAD_BASIC_INFO), &thread_info, &task_info_count)
-        if kr != KERN_SUCCESS {
-            return -1
-        }
-        
-        thread_basic_info = thread_info as! thread_basic_info_t
-        let taskTotalUserTime = Double(task_threads!.user_time.seconds)
-        let taskTotalSystemTime = Double(task_threads!.system_time.seconds)
-        let taskTotalTime = taskTotalUserTime + taskTotalSystemTime
-        let threadSystemTime = Double(thread_basic_info.pointee.system_time.seconds)
-        let threadUserTime = Double(thread_basic_info.pointee.user_time.seconds)
-        let threadTime = threadSystemTime + threadUserTime
-        let cpuUsage = Float((threadTime / taskTotalTime) * 100)
-        
-        return cpuUsage
+        return totalUsageOfCPU
     }
     
     // Measure GPU usage
-    public func measureGPUUsage() -> Float {
+    public func gpuUsage() -> Float {
         guard let commandBuffer = commandQueue.makeCommandBuffer() else {
-            return -1
+            return -1.0
         }
         
-        // Record rendering commands
+        // Start timing
+        let startTime = CACurrentMediaTime()
+        
+        // Execute commands
         // Example: render a simple triangle
         let renderPassDescriptor = MTLRenderPassDescriptor()
         // Configure render pass descriptor...
@@ -80,21 +86,19 @@ public class SystemMonitor {
         // Encode rendering commands...
         renderEncoder.endEncoding()
         
-        // Measure GPU performance
-        let gpuStartTime = CACurrentMediaTime()
-        
-        // Execute commands
+        // Commit command buffer
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
         
-        let gpuEndTime = CACurrentMediaTime()
-        let gpuTime = gpuEndTime - gpuStartTime
+        // End timing
+        let endTime = CACurrentMediaTime()
         
-        // Estimate GPU utilization as a percentage
-        let totalTimeInterval = gpuEndTime - gpuStartTime
-        let utilization = gpuTime / totalTimeInterval
+        // Calculate GPU usage as a percentage
+        let elapsedTime = endTime - startTime
+        let baselineTime: Double = 0.001 // Set a baseline time (in seconds) for your Metal commands
+        let gpuUsagePercentage = Float(elapsedTime / baselineTime) * 100.0
         
-        return utilization * 100
+        return gpuUsagePercentage
     }
     
     // Measure RAM usage
